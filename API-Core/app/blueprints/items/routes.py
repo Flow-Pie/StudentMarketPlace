@@ -1,20 +1,53 @@
-# Routes related to items
-from flask import jsonify, Blueprint
-from flask_jwt_extended import current_user
-from ...decorators.auth import jwt_required, admin_required
+from http import HTTPStatus
+from flask import Blueprint, jsonify, request
+from flask_jwt_extended import jwt_required, current_user
+from sqlalchemy.exc import SQLAlchemyError
+from ...extensions import db
+from ...models import Item
+from ...schemas.item import ItemCreateSchema
+from ...services.item import ItemService
 
-items_bp = Blueprint('items', __name__)
+items_crud_bp = Blueprint('items_crud', __name__, url_prefix='/api/items')
+schema = ItemCreateSchema()
 
-@items_bp.route('/protected', methods=['GET'])
-@jwt_required
-def protected_items():
-    return jsonify(message=f"Hello {current_user.email}!"), 200
 
-@items_bp.route('/admin', methods=['GET'])
-@admin_required
-def admin_only():
-    return jsonify(message="Top secret admins data")
+@items_crud_bp.route('', methods=['POST'])
+@jwt_required()
+def create_item():
+    errors = schema.validate(request.json)
+    if errors:
+        return jsonify({"success": False, "errors": errors}), HTTPStatus.BAD_REQUEST.value
 
-@items_bp.route('/public', methods=['GET'])
-def public_route():
-    return jsonify({"message": "Public access allowed"}), 200
+    try:
+        item = ItemService.create_item(
+            user_id=current_user.id,
+            item_data=request.json
+        )
+        return jsonify({
+            "success": True,
+            "data": {
+                "item_id": item.item_id,
+                "title": item.title,
+                "status": item.status.value
+            },
+            "message": "Listing created successfully"
+        }), HTTPStatus.CREATED.value
+
+    except ValueError as e:
+        return jsonify({"success": False, "error": str(e)}), HTTPStatus.BAD_REQUEST.value
+    except SQLAlchemyError as e:
+        db.session.rollback()
+        return jsonify({"success": False, "error": "Database operation failed"}), HTTPStatus.INTERNAL_SERVER_ERROR.value
+#get all items
+@items_crud_bp.route('', methods=['GET'])
+def get_all_item():
+    items =  Item.query.all()
+    schema = ItemSchema(many=True)
+    return jsonify(schema.dump(items)), HTTPStatus.OK.value
+
+#get an item by id
+@items_crud_bp.route('/<int:item_id>', methods=['GET'])
+def get_item_by_id(item_id):
+    item = Item.query.get_or_404(item_id)
+    schema = ItemSchema()
+    return jsonify(schema.dump(item)), HTTPStatus.OK.value
