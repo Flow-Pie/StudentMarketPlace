@@ -27,7 +27,7 @@
 
 This diagram gives a quick overview of how different parts of the system interact:
 
-![Student Market Place Call Graph](https://github.com/Flow-Pie/StudentMarketPlace/blob/dev/MartketPlaceCallGraph.drawio.svg)
+![Student Market Place Call Graph](MartketPlaceCallGraph.drawio.svg)
 
 ---
 
