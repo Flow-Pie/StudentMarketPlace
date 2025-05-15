@@ -28,14 +28,16 @@ class ItemService:
     def get_item_by_id(self, item_id):
         return Item.query.get_or_404(item_id)
 
-
     @staticmethod
     def update_item(item_data):
-        item = Item.query.get_or_404(item_data)
+        # Get item by ID from the data
+        item = Item.query.get_or_404(item_data["item_id"])  # FIXED
 
-        if item.user_id != item_data["user_id"]:
-            raise PermissionError('user does not have permission to update this item')
-        
+        # Verify correct ownership field
+        if item.seller_id != item_data["user_id"]:  # Changed user_id to seller_id
+            raise PermissionError('User does not have permission to update this item')
+
+        # Update only provided fields
         if "title" in item_data:
             item.title = item_data["title"]
         if "description" in item_data:
@@ -51,7 +53,7 @@ class ItemService:
 
         db.session.commit()
         return item
-    
+
     @staticmethod
     def delete_item(item_id):
         item = Item.query.get(item_id)

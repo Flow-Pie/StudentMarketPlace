@@ -5,7 +5,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from ...extensions import db
 from ...models import Item
-from ...schemas.item import ItemCreateSchema, ItemSchema
+from ...schemas.item import ItemCreateSchema, ItemSchema, ItemUpdateSchema
 from ...services.item import ItemService
 
 items_crud_bp = Blueprint('items_crud', __name__, url_prefix='/api/items')
@@ -63,3 +63,36 @@ def delete_item(item_id):
         return jsonify({"success": False, "error": str(e)}), HTTPStatus.NOT_FOUND.value
     except Exception as e:
         return jsonify({"success": False, "error": "Failed to delete item"}), HTTPStatus.INTERNAL_SERVER_ERROR.value
+
+update_schema = ItemUpdateSchema()
+
+@items_crud_bp.route('/<int:item_id>', methods=['PUT'])
+@jwt_required()
+def update_item(item_id):
+    try:
+        # 2. Use the correct update schema for validation
+        errors = update_schema.validate(request.json)
+        if errors:
+            return jsonify({"success": False, "errors": errors}), HTTPStatus.BAD_REQUEST.value
+
+        # 3. Pass correct parameters to service
+        item = ItemService.update_item(
+            item_data={
+                "item_id": item_id,  # Fix item lookup
+                "user_id": current_user.user_id,
+                **request.json
+            }
+        )
+        return jsonify({
+            "success": True,
+            "data": ItemSchema().dump(item),
+            "message": "Listing updated successfully"
+        }), HTTPStatus.OK.value
+
+    except PermissionError as e:
+        return jsonify({"success": False, "error": str(e)}), HTTPStatus.FORBIDDEN.value
+    except ValueError as e:
+        return jsonify({"success": False, "error": str(e)}), HTTPStatus.BAD_REQUEST.value
+    except SQLAlchemyError as e:
+        db.session.rollback()
+        return jsonify({"success": False, "error": "Database operation failed"}), HTTPStatus.INTERNAL_SERVER_ERROR.value
