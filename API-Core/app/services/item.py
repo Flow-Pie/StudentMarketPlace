@@ -91,3 +91,41 @@ class ItemService:
                 for category, count in category_counts.items()
             }
         }
+
+    def update_item(item_data):
+        # Get item by ID from the data
+        item = Item.query.get_or_404(item_data["item_id"])  # FIXED
+
+        # Verify correct ownership field
+        if item.seller_id != item_data["user_id"]:  # Changed user_id to seller_id
+            raise PermissionError('User does not have permission to update this item')
+
+        # Update only provided fields
+        if "title" in item_data:
+            item.title = item_data["title"]
+        if "description" in item_data:
+            item.description = item_data["description"]
+        if "price" in item_data:
+            item.price = item_data["price"]
+        if "category" in item_data:
+            item.category = ItemCategory(item_data["category"])
+        if "condition" in item_data:
+            item.condition = ItemCondition(item_data["condition"])
+        if "status" in item_data:
+            item.status = ItemStatus(item_data["status"])
+
+        db.session.commit()
+        return item
+
+    @staticmethod
+    def delete_item(item_id):
+        item = Item.query.get(item_id)
+        if not item:
+            raise ValueError(f"Item with id {item_id} not found")
+        try:
+            db.session.delete(item)
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            raise e
+

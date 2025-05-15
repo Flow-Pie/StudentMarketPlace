@@ -1,6 +1,7 @@
 from marshmallow import Schema, fields, validate
 from ..models import ItemCategory, ItemCondition, ItemStatus
 from marshmallow_enum import EnumField
+from enum import Enum
 
 from ..models.user import UserInstitution
 
@@ -61,3 +62,10 @@ class PaginatedItemSchema(Schema):
         values=fields.Integer(),
         metadata={"description": "Count of items per category"}
     )
+class ItemUpdateSchema(Schema):
+    title = fields.Str(required=False, validate=validate.Length(min=1, max=100))
+    description = fields.Str(required=False)
+    price = fields.Decimal(required=False, places=2, validate=validate.Range(min=0))
+    category = fields.Enum(ItemCategory, by_value=True, required=False)
+    condition = fields.Enum(ItemCondition, by_value=True, required=False)
+    status = fields.Enum(ItemStatus, by_value=True, required=False)
