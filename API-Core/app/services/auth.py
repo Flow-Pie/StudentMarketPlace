@@ -2,6 +2,9 @@ from flask import jsonify
 from flask_jwt_extended import create_access_token, create_refresh_token
 from jinja2.runtime import identity
 
+from app import db
+
+
 class AuthService:
     @staticmethod
     def generate_token(user):
