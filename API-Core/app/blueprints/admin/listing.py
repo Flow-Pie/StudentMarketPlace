@@ -1,9 +1,9 @@
 from flask import Blueprint, jsonify, request
 from flask_jwt_extended import get_jwt_identity
 
-from app.decorators.auth import admin_required
-from app.extensions import db
-from app.models import User, Item, ItemStatus, ItemCondition
+from ...decorators.auth import admin_required
+from ...extensions import db
+from ...models import User, Item, ItemStatus, ItemCondition
 
 admin_listings_bp = Blueprint('admin_listing', __name__)
 

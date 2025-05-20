@@ -3,13 +3,13 @@ from sqlalchemy.exc import IntegrityError
 from flask import jsonify
 from flask import Blueprint, request, jsonify
 from werkzeug.routing import ValidationError
-from app.schemas.auth import RegistrationSchema
-from app.models.user import User, AccountStatus
-from app.extensions import db
+from ...schemas.auth import RegistrationSchema
+from ...models.user import User, AccountStatus
+from ...extensions import db
 from flask_jwt_extended import create_access_token
 from datetime import timedelta, timezone, datetime
-from app.schemas.auth import LoginSchema
-from app.services.auth import AuthService
+from ...schemas.auth import LoginSchema
+from ...services.auth import AuthService
 
 auth_bp = Blueprint('auth', __name__)
 

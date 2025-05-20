@@ -1,6 +1,6 @@
 from datetime import datetime
 from enum import Enum
-from app.extensions import db
+from ..extensions import db
 
 class ReportStatus(Enum):
     PENDING = "pending"
@@ -11,7 +11,7 @@ class Report(db.Model):
     __tablename__ = "reports"
 
     id = db.Column(db.Integer, primary_key=True)
-    reporter_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    reporter_id = db.Column(db.Integer, db.ForeignKey("users.user_id"), nullable=False)
     content_type = db.Column(db.String(50), nullable=False)  # e.g., 'item', 'message'
     content_id = db.Column(db.Integer, nullable=False)
     reason = db.Column(db.String(255), nullable=False)
