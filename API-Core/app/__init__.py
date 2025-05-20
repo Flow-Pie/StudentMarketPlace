@@ -4,6 +4,7 @@ import os
 from datetime import timedelta
 import logging
 from werkzeug.exceptions import HTTPException
+
 from .config import Config
 
 # Configure logging
@@ -141,6 +142,7 @@ def register_blueprints(app):
     from .blueprints.routes import items_bp
     from .blueprints.item_images.images import  images_crud_bp
     from .blueprints.admin.listing import admin_listings_bp
+    from .blueprints.admin.view import report_bp
     from .blueprints import images_crud_bp, msg_bp
     from .blueprints.admin.users import admin_bp
 
@@ -151,7 +153,8 @@ def register_blueprints(app):
         (images_crud_bp, '/api/item'),
         (msg_bp, '/api/messages'),
         (admin_bp, '/api/admin'),
-        (admin_listings_bp, '/api/admin')
+        (admin_listings_bp, '/api/admin'),
+        (report_bp, '/api/admin'),
     ]
 
     for blueprint, url_prefix in blueprints:
