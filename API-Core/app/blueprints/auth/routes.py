@@ -106,7 +106,7 @@ def refresh_access_token():
     new_access_token = create_access_token(identity=identity)
     return jsonify({"access_token": new_access_token}), 200
 
-@auth_bp.route('/logout', methods=['GET'])
+@auth_bp.route('/logout', methods=['POST'])
 @jwt_required(verify_type=False)
 def logout():
     jwt = get_jwt()
