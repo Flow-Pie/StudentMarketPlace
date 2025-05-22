@@ -6,12 +6,13 @@ from sqlalchemy.exc import SQLAlchemyError
 from ...extensions import db
 from ...models import Item
 from ...schemas.item import ItemCreateSchema, ItemSchema
-from ...schemas.message import MessageCreateSchema
+from ...schemas.message import MessageCreateSchema, MessageSchema
 from ...services.item import ItemService
 from ...services.message import MessageService
 
 msg_bp = Blueprint('msg_crud', __name__)
 message_schema = MessageCreateSchema()
+message_output_schema = MessageSchema(many=True)
 
 
 @msg_bp.route('', methods=['POST'])
@@ -38,6 +39,18 @@ def send_message():
 
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
+    except SQLAlchemyError:
+        db.session.rollback()
+        return jsonify({"error": "Database error"}), 500
+
+
+@msg_bp.route('/<int:user_id>', methods=['GET'])
+@jwt_required()
+def get_inbox(user_id):
+    try:
+        messages = MessageService.get_inbox_messages(user_id)
+        result = message_output_schema.dump(messages)
+        return jsonify(result), 200
     except SQLAlchemyError:
         db.session.rollback()
         return jsonify({"error": "Database error"}), 500
