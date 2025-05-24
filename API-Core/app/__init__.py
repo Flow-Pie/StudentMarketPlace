@@ -5,9 +5,10 @@ from datetime import timedelta
 import logging
 from werkzeug.exceptions import HTTPException
 
-from .blueprints import images_crud_bp
-from .blueprints import msg_bp
+from .blueprints.admin.stats import admin_stat_bp
 from .config import Config
+from .extensions import db
+from .models.user import TokenBlockList
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -47,7 +48,7 @@ def configure_app(app, config=None):
     app.config.update({
         'SQLALCHEMY_TRACK_MODIFICATIONS': False,
         'JWT_ERROR_MESSAGE_KEY': 'message',
-        'PROPAGATE_EXCEPTIONS': True,  # Better error propagation
+        'PROPAGATE_EXCEPTIONS': True,
         'JWT_ACCESS_TOKEN_EXPIRES': timedelta(hours=1),
         'JWT_REFRESH_TOKEN_EXPIRES': timedelta(days=30),
     })
@@ -136,6 +137,13 @@ def configure_jwt_callbacks(jwt):
             'error': 'authorization_required'
         }), 401
 
+    @jwt.token_in_blocklist_loader
+    def token_in_blocklist_callback(jwt_header, jwt_payload):
+        jti = jwt_payload['jti']
+        token = db.session.query(TokenBlockList).filter(TokenBlockList.jti==jti).scalar()
+        return token is not None
+
+
 
 def register_blueprints(app):
     """Register application blueprints with proper URL prefixes"""
@@ -143,13 +151,21 @@ def register_blueprints(app):
     from .blueprints.items.routes import items_crud_bp
     from .blueprints.routes import items_bp
     from .blueprints.item_images.images import  images_crud_bp
+    from .blueprints.admin.listing import admin_listings_bp
+    from .blueprints.admin.view import report_bp
+    from .blueprints import images_crud_bp, msg_bp
+    from .blueprints.admin.users import admin_bp
 
     blueprints = [
         (auth_bp, '/api/auth'),
         (items_bp, '/api/admin'),
         (items_crud_bp, '/api/items'),
         (images_crud_bp, '/api/item'),
-        (msg_bp, '/api/messages')
+        (msg_bp, '/api/messages'),
+        (admin_bp, '/api/admin'),
+        (admin_listings_bp, '/api/admin'),
+        (report_bp, '/api/admin'),
+        (admin_stat_bp, '/api/admin')
     ]
 
     for blueprint, url_prefix in blueprints:

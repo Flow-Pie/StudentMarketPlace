@@ -3,12 +3,16 @@ from sqlalchemy.exc import IntegrityError
 from flask import jsonify
 from flask import Blueprint, request, jsonify
 from werkzeug.routing import ValidationError
+
+from ... import TokenBlockList
+from ...models import user
 from ...schemas.auth import RegistrationSchema
 from ...models.user import User, AccountStatus
 from ...extensions import db
-from flask_jwt_extended import create_access_token
+from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity, get_jwt
 from datetime import timedelta, timezone, datetime
 from ...schemas.auth import LoginSchema
+from ...services.auth import AuthService
 
 auth_bp = Blueprint('auth', __name__)
 
@@ -36,25 +40,23 @@ def login():
     user.last_login = datetime.now(timezone.utc)
     db.session.commit()
 
-    # Create JWT token
-    access_token = create_access_token(
-        identity=str(user.user_id),
-        additional_claims={
-            'name' : user.get_full_name(),
-            'email': user.email,
-            'is_admin': user.is_admin
+    # unpacking tokens
+    access_token, refresh_token=AuthService.generate_token(user)
+    return jsonify(
+        {
+            "message": "Login successful",
+            "tokens":{
+                "access_token" : access_token,
+                "refresh_token" : refresh_token
+            },
+            "user": {
+                "id": user.user_id,
+                "email": user.email,
+                'name': user.get_full_name()
+            }
         }
-    )
+    ), 200
 
-    return jsonify({
-        "message": "Login successful",
-        "access_token": access_token,
-        "user": {
-            "id": user.user_id,
-            "email": user.email,
-            'name': user.get_full_name()
-        }
-    })
 
 # app/blueprints/auth/routes.py
 @auth_bp.route('/register', methods=['POST'])
@@ -96,3 +98,22 @@ def register():
         import traceback
         traceback.print_exc()
         return jsonify({'error': 'Internal server error'}), 500
+
+@auth_bp.route('/refresh', methods=['POST'])
+@jwt_required(refresh=True)
+def refresh_access_token():
+    identity = get_jwt_identity()
+    new_access_token = create_access_token(identity=identity)
+    return jsonify({"access_token": new_access_token}), 200
+
+@auth_bp.route('/logout', methods=['POST'])
+@jwt_required(verify_type=False)
+def logout():
+    jwt = get_jwt()
+    jti = jwt['jti']
+    token_type = jwt['type']
+
+    token_block =TokenBlockList(jti=jti)
+    token_block.save()
+
+    return jsonify({"message": f"{token_type} token revoked successfully"}), 200

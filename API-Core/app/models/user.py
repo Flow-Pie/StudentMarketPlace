@@ -110,3 +110,29 @@ class User(db.Model):
     def unban_user(self):
         self.account_status = AccountStatus.ACTIVE
         self.ban_reason = None
+
+    def to_admin_dict(self):
+        return {
+            'user_id': self.user_id,
+            'email': self.email,
+            'full_name': self.get_full_name(),
+            'institution': self.institution.value if self.institution else None,
+            'account_status': self.account_status.value,
+            'is_admin': self.is_admin,
+            'registered_on': self.registered_on.isoformat(),
+            'last_login': self.last_login.isoformat() if self.last_login else None,
+            'ban_reason': self.ban_reason
+        }
+
+
+class TokenBlockList(db.Model):
+    id=db.Column(db.Integer, primary_key=True)
+    jti=db.Column(db.String(50), unique=True, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    def __repr__(self):
+        return '<TokenBlockList %r>' % self.jti
+
+    def save(self):
+        db.session.add(self)
+        db.session.commit()

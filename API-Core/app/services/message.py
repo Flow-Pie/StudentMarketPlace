@@ -46,3 +46,16 @@ class MessageService:
         db.session.add(message)
         db.session.commit()
         return message
+
+    @staticmethod
+    def get_inbox_messages(user_id):
+        # Fetch messages where the user is a participant in the conversation
+        messages = Message.query.join(
+            Conversation, Message.conversation_id == Conversation.conversation_id
+        ).join(
+            ConversationParticipant, Conversation.conversation_id == ConversationParticipant.conversation_id
+        ).filter(
+            ConversationParticipant.user_id == user_id
+        ).order_by(Message.sent_at.desc()).all()
+
+        return messages
