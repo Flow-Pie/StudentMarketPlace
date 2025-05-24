@@ -1,6 +1,10 @@
+from http import HTTPStatus
+
 from flask import Blueprint, request, jsonify, current_app
 from flask_jwt_extended import jwt_required, current_user
 from sqlalchemy.exc import SQLAlchemyError
+
+from ... import APIError
 from ...config import Config
 from ...models import Item, ItemImage
 from ...services.item_images import ImageService
@@ -12,67 +16,98 @@ images_crud_bp = Blueprint('item_images', __name__)
 @images_crud_bp.route('/<int:item_id>/images', methods=['POST'])
 @jwt_required()
 def upload_image(item_id):
-    item = Item.query.get_or_404(item_id)
-
-    if item.seller_id != current_user.user_id:
-        return jsonify({"error": "Unauthorized"}), 403
-
-    if 'image' not in request.files:
-        return jsonify({"error": "No image part"}), 400
-
     try:
-        file = request.files['image']
-        image = ImageService.save_image(file, item_id)  #creates but doesn't save to DB
+        item = Item.query.get(item_id)
+        if not item:
+            raise APIError("Item not found", "ITEM_NOT_FOUND", HTTPStatus.NOT_FOUND.value)
 
-        # Add to session and commit
+        if item.seller_id != current_user.user_id:
+            raise APIError("Unauthorized", "PERMISSION_DENIED", HTTPStatus.FORBIDDEN.value)
+
+        if 'image' not in request.files:
+            raise APIError("No image provided", "MISSING_IMAGE", HTTPStatus.BAD_REQUEST.value)
+
+        file = request.files['image']
+        image = ImageService.save_image(file, item_id)
+
         db.session.add(image)
 
-        # Set primary if needed AFTER adding to session
         if not item.images.count():
             image.set_as_primary()
 
         db.session.commit()
 
-        return jsonify(image.to_dict()), 201
+        return image.to_dict(), HTTPStatus.CREATED.value
 
-    except ValueError as e:
+    except ValueError:
         db.session.rollback()
-        return jsonify({"error": str(e)}), 400
-    except SQLAlchemyError as e:
+        raise APIError(
+            message="Invalid image file",
+            code="INVALID_IMAGE",
+            status_code=HTTPStatus.BAD_REQUEST.value
+        )
+    except SQLAlchemyError as err:
         db.session.rollback()
-        current_app.logger.error(f"Database error: {str(e)}")
-        return jsonify({"error": "Database operation failed"}), 500
-    except Exception as e:
+        current_app.logger.error(f"Database error uploading image: {str(err)}")
+        raise APIError(
+            message="Failed to save image",
+            code="DATABASE_ERROR",
+            status_code=HTTPStatus.INTERNAL_SERVER_ERROR.value
+        )
+    except Exception as err:
         db.session.rollback()
-        current_app.logger.error(f"Unexpected error: {str(e)}")
-        return jsonify({"error": "Upload failed"}), 500
+        current_app.logger.error(f"Unexpected error uploading image: {str(err)}")
+        raise APIError(
+            message="Image upload failed",
+            code="UPLOAD_FAILED",
+            status_code=HTTPStatus.INTERNAL_SERVER_ERROR.value
+        )
 
 
 @images_crud_bp.route('/<int:item_id>/images/<int:image_id>', methods=['DELETE'])
 @jwt_required()
 def delete_image(item_id, image_id):
-    image = ItemImage.query.get_or_404(image_id)
-
-    if image.item.seller_id != current_user.user_id:
-        return jsonify({"error": "Unauthorized"}), 403
-
     try:
+        image = ItemImage.query.get_or_404(image_id)
+
+        if not image:
+            raise APIError("Image not found", "IMAGE_NOT_FOUND", HTTPStatus.NOT_FOUND.value)
+
+        if image.item.seller_id != current_user.user_id:
+            raise APIError("Unauthorized", "PERMISSION_DENIED", HTTPStatus.FORBIDDEN.value)
+
         ImageService.delete_image(image)
         db.session.commit()
-        return jsonify({"message": "Image deleted"}), 200
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({"error": str(e)}), 500
 
+        return {"message": "Image deleted successfully"}, HTTPStatus.OK.value
+
+
+    except Exception as err:
+        db.session.rollback()
+        current_app.logger.error(f"Error deleting image {image_id}: {str(err)}")
+
+        raise APIError(
+            message="Failed to delete image",
+            code="DELETE_FAILED",
+            status_code=HTTPStatus.INTERNAL_SERVER_ERROR.value
+
+        )
 
 @images_crud_bp.route('/<int:item_id>/images/remote', methods=['POST'])
 @jwt_required()
 def upload_from_url(item_id):
-    data = request.get_json()
-    if not data or 'url' not in data:
-        return jsonify({"error": "URL parameter is required"}), 400
-
     try:
+        data = request.get_json()
+        if not data or 'url' not in data:
+            raise APIError("URL parameter is required", "MISSING_URL", HTTPStatus.BAD_REQUEST.value)
+
+        item = Item.query.get(item_id)
+        if not item:
+            raise APIError("Item not found", "ITEM_NOT_FOUND", HTTPStatus.NOT_FOUND.value)
+
+        if item.seller_id != current_user.user_id:
+            raise APIError("Unauthorized", "PERMISSION_DENIED", HTTPStatus.FORBIDDEN.value)
+
         filename = ImageService.download_from_url(data['url'])
         image = ItemImage(
             item_id=item_id,
@@ -82,19 +117,23 @@ def upload_from_url(item_id):
         db.session.add(image)
         db.session.commit()
 
-        return jsonify({
+        return {
             "success": True,
             "image": image.to_dict()
-        }), 201
+        }, HTTPStatus.CREATED.value
 
-    except ValueError as e:
-        return jsonify({
-            "success": False,
-            "error": str(e)
-        }), 400
+
+    except ValueError as err:
+        raise APIError(
+            message="Invalid image URL",
+            code="INVALID_URL",
+            status_code=HTTPStatus.BAD_REQUEST.value
+        )
     except Exception as e:
         db.session.rollback()
-        return jsonify({
-            "success": False,
-            "error": "Internal server error"
-        }), 500
+        current_app.logger.error(f"Error uploading from URL: {str(e)}")
+        raise APIError(
+            message="Failed to upload image from URL",
+            code="REMOTE_UPLOAD_FAILED",
+            status_code=HTTPStatus.INTERNAL_SERVER_ERROR.value
+        )

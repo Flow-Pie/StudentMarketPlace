@@ -1,7 +1,10 @@
 from http import HTTPStatus
 from flask import Blueprint, jsonify, request
 from flask_jwt_extended import  current_user, jwt_required
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import SQLAlchemyError, DatabaseError
+
+import app
+from ...errors import APIError
 from ...extensions import db
 from ...models import Item, User, ItemCategory
 from ...schemas.item import ItemCreateSchema, ItemSchema, ItemFilterSchema, PaginatedItemSchema
@@ -18,8 +21,14 @@ schema = ItemCreateSchema()
 def create_item():
     errors = schema.validate(request.json)
     if errors:
-        return jsonify({"success": False, "errors": errors}), HTTPStatus.BAD_REQUEST.value
-
+        raise APIError(
+            message="Validation failed: " + "; ".join(
+                f"{field}: {', '.join(messages)}"
+                for field, messages in errors.items()
+            ),
+            code = "VALIDATION_ERROR",
+            status_code = HTTPStatus.BAD_REQUEST.value
+        )
     try:
         item = ItemService.create_item(
             user_id=current_user.user_id,
@@ -36,23 +45,53 @@ def create_item():
         }), HTTPStatus.CREATED.value
 
     except ValueError as e:
-        return jsonify({"success": False, "error": str(e)}), HTTPStatus.BAD_REQUEST.value
+         raise APIError(
+             message= "Invalid input data provided",
+             code = "INVALID_INPUT",
+             status_code = HTTPStatus.BAD_REQUEST.value
+         )
     except SQLAlchemyError as e:
         db.session.rollback()
-        return jsonify({"success": False, "error": "Database operation failed"}), HTTPStatus.INTERNAL_SERVER_ERROR.value
+        raise APIError(
+            message= "Database operation failed",
+            code = "DATABASE_ERROR",
+            status_code = HTTPStatus.INTERNAL_SERVER_ERROR.value
+        )
 
 
 #get all items
 @items_crud_bp.route('', methods=['GET'])
 def get_all_item():
-    items =  Item.query.order_by(Item.created_at.desc()).all()
-    return jsonify(ItemSchema(many=True).dump(items)), HTTPStatus.OK.value
-
+    try:
+        items =  Item.query.order_by(Item.created_at.desc()).all()
+        return ItemSchema(many=True).dump(items), HTTPStatus.OK.value
+    except DatabaseError:
+        raise APIError(
+            message="Failed to retrieve items",
+            code="DATABASE_ERROR",
+            status_code=HTTPStatus.INTERNAL_SERVER_ERROR.value
+        )
 #get an item by id
 @items_crud_bp.route('/<int:item_id>', methods=['GET'])
 def get_item_by_id(item_id):
-    item = Item.query.get_or_404(item_id)
-    return jsonify(ItemSchema().dump(item)), HTTPStatus.OK.value
+    item = Item.query.get(item_id)
+
+    if not item:
+        app.logger.error(f"Item not found - ID: {item_id}")
+        raise APIError(
+            message="Item not found",
+            code="ITEM_NOT_FOUND",
+            status_code=404
+        )
+
+    try:
+        return jsonify(ItemSchema().dump(item)), HTTPStatus.OK.value
+    except DatabaseError :
+        raise APIError(
+            message="Database operation failed",
+            code="DATABASE_ERROR",
+            status_code=HTTPStatus.INTERNAL_SERVER_ERROR.value
+        )
 
 @items_crud_bp.route('/params', methods=['GET'])
 def get_items():
@@ -68,15 +107,17 @@ def get_items():
         })
 
     except ValueError as e:
-        return jsonify({
-            "error": "invalid_filter",
-            "message": str(e)
-        }), HTTPStatus.BAD_REQUEST.value
-    except Exception as e:
-        return jsonify({
-            "error": "server_error",
-            "message": "An unexpected error occurred"
-        }), HTTPStatus.INTERNAL_SERVER_ERROR.value
+        raise APIError(
+            message="Invalid filters provided",
+            code="INVALID_FILTER",
+            status_code=HTTPStatus.BAD_REQUEST.value
+        )
+    except Exception:
+        raise APIError(
+            message="An unexpected error occurred",
+            code="SERVER_ERROR",
+            status_code=HTTPStatus.INTERNAL_SERVER_ERROR.value
+        )
 
 
 @items_crud_bp.route('paginated', methods=['GET'])
@@ -97,7 +138,18 @@ def get_page_items():
         return PaginatedItemSchema().dump(result), 200
 
     except KeyError:  # Invalid category
-        return jsonify({"error": "Invalid category"}), 400
+        raise APIError(
+            message="Invalid category",
+            code="INVALID_CATEGORY",
+            status_code=HTTPStatus.BAD_REQUEST.value
+        )
+    except Exception:
+        raise APIError(
+            message="Failed to retrieve items",
+            code="SERVER_ERROR",
+            status_code=HTTPStatus.INTERNAL_SERVER_ERROR.value
+        )
+
 
 @items_crud_bp.route('/<int:item_id>', methods=['DELETE'])
 @jwt_required()
@@ -106,37 +158,61 @@ def delete_item(item_id):
         ItemService.delete_item(item_id)
         return jsonify({"success": True, "message": f"Item {item_id} deleted successfully."}), HTTPStatus.NO_CONTENT
     except ValueError as e:
-        return jsonify({"success": False, "error": str(e)}), HTTPStatus.NOT_FOUND.value
+        raise APIError(
+            message="Item not found",
+            code="ITEM_NOT_FOUND",
+            status_code=HTTPStatus.NOT_FOUND.value
+        )
     except Exception as e:
-        return jsonify({"success": False, "error": "Failed to delete item"}), HTTPStatus.INTERNAL_SERVER_ERROR.value
-
-update_schema = ItemUpdateSchema()
+        raise APIError(
+            message="Failed to delete item",
+            code="SERVER_ERROR",
+            status_code=HTTPStatus.INTERNAL_SERVER_ERROR.value
+        )
 
 @items_crud_bp.route('/<int:item_id>', methods=['PUT'])
 @jwt_required()
 def update_item(item_id):
-    try:
-        errors = update_schema.validate(request.json)
-        if errors:
-            return jsonify({"success": False, "errors": errors}), HTTPStatus.BAD_REQUEST.value
+    errors = ItemUpdateSchema().validate(request.json)
+    if errors:
+        raise APIError(
+            message="Validation failed: " + "; ".join(
+                f"{field}: {', '.join(messages)}"
+                for field, messages in errors.items()
+            ),
+            code="VALIDATION_ERROR",
+            status_code=HTTPStatus.BAD_REQUEST.value
+        )
 
+    try:
         item = ItemService.update_item(
             item_data={
-                "item_id": item_id,  # Fix item lookup
+                "item_id": item_id,
                 "user_id": current_user.user_id,
                 **request.json
             }
         )
-        return jsonify({
+        return {
             "success": True,
             "data": ItemSchema().dump(item),
             "message": "Listing updated successfully"
-        }), HTTPStatus.OK.value
-
+        }, HTTPStatus.OK.value
     except PermissionError as e:
-        return jsonify({"success": False, "error": str(e)}), HTTPStatus.FORBIDDEN.value
+        raise APIError(
+            message=str(e),
+            code="PERMISSION_DENIED",
+            status_code=HTTPStatus.FORBIDDEN.value
+        )
     except ValueError as e:
-        return jsonify({"success": False, "error": str(e)}), HTTPStatus.BAD_REQUEST.value
-    except SQLAlchemyError as e:
+        raise APIError(
+            message=str(e),
+            code="INVALID_INPUT",
+            status_code=HTTPStatus.BAD_REQUEST.value
+        )
+    except SQLAlchemyError:
         db.session.rollback()
-        return jsonify({"success": False, "error": "Database operation failed"}), HTTPStatus.INTERNAL_SERVER_ERROR.value
+        raise APIError(
+            message="Database operation failed",
+            code="DATABASE_ERROR",
+            status_code=HTTPStatus.INTERNAL_SERVER_ERROR.value
+        )

@@ -91,6 +91,7 @@ class ItemService:
             }
         }
 
+    @staticmethod
     def update_item(item_data):
         # Get item by ID from the data
         item = Item.query.get_or_404(item_data["item_id"])  # FIXED
