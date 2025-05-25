@@ -10,19 +10,24 @@ on:
 
 jobs:
   codacy-security-scan:
-    runs-on: ubuntu-latest  # Single consistent environment
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Run Codacy Analysis (via Docker)
+      - name: Run Codacy Analysis
         uses: docker://codacy/codacy-analysis-cli:latest
+        env:
+          PROJECT_TOKEN: ${{ secrets.CODACY_PROJECT_TOKEN }}
         with:
           args: >-
             analyze
-            --project-token ${{ secrets.CODACY_PROJECT_TOKEN }}
+            --project-token $PROJECT_TOKEN
             --verbose
-            --output results.sarif
+            --output /github/workspace/codacy-results.sarif
             --format sarif
             --gh-code-scanning-compat true
             --max-allowed-issues 2147483647
@@ -31,5 +36,4 @@ jobs:
       - name: Upload SARIF results
         uses: github/codeql-action/upload-sarif@v3
         with:
-          sarif_file: results.sarif
-          checkout_path: ${{ github.workspace }}
+          sarif_file: codacy-results.sarif
