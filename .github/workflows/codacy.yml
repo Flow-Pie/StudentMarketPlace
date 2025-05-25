@@ -1,39 +1,27 @@
-name: Codacy Security Scan
+name: Code Security Scan
 
 on:
   push:
-    branches: [ "dev", "release", "protect_release_branch" ]
+    branches: [dev, release, protect_release_branch]
   pull_request:
-    branches: [ "dev", "release" ]
-  schedule:
-    - cron: '19 10 * * 6'
+    branches: [dev, release]
 
 jobs:
-  codacy-security-scan:
+  codeql-analysis:
+    name: CodeQL
     runs-on: ubuntu-latest
     permissions:
-      contents: read
       security-events: write
+      actions: read
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Run Codacy Analysis
-        uses: docker://codacy/codacy-analysis-cli:latest
-        env:
-          PROJECT_TOKEN: ${{ secrets.CODACY_PROJECT_TOKEN }}
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
         with:
-          args: >-
-            analyze
-            --project-token $PROJECT_TOKEN
-            --verbose
-            --output /github/workspace/codacy-results.sarif
-            --format sarif
-            --gh-code-scanning-compat true
-            --max-allowed-issues 2147483647
-            /github/workspace/API-Core
+          languages: python
 
-      - name: Upload SARIF results
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: codacy-results.sarif
+      - name: Analyze
+        uses: github/codeql-action/analyze@v3
