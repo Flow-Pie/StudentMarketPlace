@@ -31,6 +31,20 @@ This diagram gives a quick overview of how different parts of the system interac
 
 ---
 
+## 🧠 Sequence diagram
+The shows image upload API error handling (invalid token, permission denied)
+
+```mermaid
+sequenceDiagram
+    Client->>API: POST /items/123/images (invalid token)
+    API->>Client: 401 Unauthorized (TOKEN_INVALID)
+    Client->>API: POST /items/123/images (valid token)
+    API->>DB: Check item ownership
+    DB->>API: Item belongs to user B
+    API->>Client: 403 Forbidden (PERMISSION_DENIED)
+```
+
+
 ## 🚀 Getting Started
 
 1. **Clone the repo**  
