@@ -19,9 +19,10 @@ from ..models import ItemImage
 
 class ImageService:
     @staticmethod
-    def generate_unique_filename(original_filename):
-        ext = os.path.splitext(original_filename)[1]
-        return f"{uuid.uuid4().hex}{ext}"
+    def generate_unique_filename(filename):
+        """Generates a safe, unique filename."""
+        safe_name = secure_filename(filename)  # Sanitize
+        return f"{uuid.uuid4().hex}_{safe_name}"
 
     @staticmethod
     def allowed_file(filename):
@@ -40,25 +41,29 @@ class ImageService:
                 unique_filename
             )
 
-            # Create image record first
+            # Prevent path traversal
+            filepath = os.path.abspath(filepath)
+            upload_dir = os.path.abspath(current_app.config['UPLOAD_FOLDER'])
+            if not filepath.startswith(upload_dir):
+                raise ValueError("Invalid file path (directory traversal detected)")
+
             image = ItemImage(
                 item_id=item_id,
                 image_url=f"{current_app.config['MEDIA_URL']}{unique_filename}",
                 is_primary=False
             )
 
-            # Validate uniqueness before saving file
             if ItemImage.query.filter_by(image_url=image.image_url).first():
                 raise ValueError("Image URL already exists")
 
-            # Save file only after DB validation
-            os.makedirs(os.path.dirname(filepath), exist_ok=True)
+            os.makedirs(upload_dir, exist_ok=True)
             file.save(filepath)
+            return f"{current_app.config['MEDIA_URL']}{unique_filename}"
 
-            return image
         except Exception as err:
             current_app.logger.error(f"Image save failed: {str(err)}")
             raise ValueError(f"Could not save image: {str(err)}") from err
+
     @staticmethod
     def delete_image(image):
         # Remove from filesystem

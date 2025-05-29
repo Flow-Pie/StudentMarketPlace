@@ -17,79 +17,63 @@ images_crud_bp = Blueprint('item_images', __name__)
 @images_crud_bp.route('/<int:item_id>/images', methods=['POST'])
 @jwt_required()
 def upload_image(item_id):
+    item = Item.query.get(item_id)
+    if not item:
+        raise APIError(
+            message="Item not found",
+            code="ITEM_NOT_FOUND",
+            status_code=404
+        )
+
+    if item.seller_id != current_user.user_id:
+        raise APIError(
+            message="Unauthorized: cannot upload image for this item",
+            code="PERMISSION_DENIED",
+            status_code=403
+        )
+
+    image_file = request.files.get("image")
+    if not image_file:
+        raise APIError(
+            message="No image file provided",
+            code="NO_IMAGE_PROVIDED",
+            status_code=400
+        )
+
+    filepath = None
+
     try:
-        item = Item.query.get(item_id)
-        if not item:
-            raise APIError("Item not found", "ITEM_NOT_FOUND", HTTPStatus.NOT_FOUND.value)
+        filepath = ImageService.save_image(image_file, item_id)
 
-        if item.seller_id != current_user.user_id:
-            raise APIError("Unauthorized", "PERMISSION_DENIED", HTTPStatus.FORBIDDEN.value)
+        is_primary = not bool(item.images)  # True if there are no existing image
 
-        if 'image' not in request.files:
-            raise APIError("No image provided", "MISSING_IMAGE", HTTPStatus.BAD_REQUEST.value)
-
-        file = request.files['image']
-        image = ImageService.save_image(file, item_id)
-        filepath = ImageService.get_full_path(image.image_url)
-
-        db.session.add(image)
-
-        if not item.images.count():
-            with db.session.begin_nested():
-                item.images.update({'is_primary': False})
-                image.is_primary = True
-
+        new_image = ItemImage(item_id=item.item_id, image_url=filepath, is_primary=is_primary)
+        db.session.add(new_image)
         db.session.commit()
+        return new_image.to_dict(), 201
 
-        return image.to_dict(), HTTPStatus.CREATED.value
+    except SQLAlchemyError as e:
+        current_app.logger.error(f"Database error saving image for item {item_id}: {e}")
+        try:
+            db.session.rollback()
+        except SQLAlchemyError as rollback_err:
+            current_app.logger.error(f"Error during rollback: {rollback_err}")
 
-    except ValueError:
-        db.session.rollback()
-        raise APIError(
-            message="Invalid image file",
-            code="INVALID_IMAGE",
-            status_code=HTTPStatus.BAD_REQUEST.value
-        )
-    except IntegrityError as err:
-        if filepath and os.path.exists(filepath):
-            os.remove(filepath)
-        db.session.rollback()
-        if "unique constraint" in str(err).lower():
-            raise APIError(
-                message="Image URL conflict",
-                code="IMAGE_CONFLICT",
-                status_code=HTTPStatus.CONFLICT
-            )
-        raise APIError(
-            message="Database integrity error",
-            code="DATABASE_ERROR",
-            status_code=HTTPStatus.INTERNAL_SERVER_ERROR
-        )
-    except SQLAlchemyError as err:
-        db.session.rollback()
-        current_app.logger.error(f"Database error uploading image: {str(err)}")
-        raise APIError(
-            message="Failed to save image",
-            code="DATABASE_ERROR",
-            status_code=HTTPStatus.INTERNAL_SERVER_ERROR.value
-        )
-    except Exception as err:
-        if filepath and os.path.exists(filepath):
-            os.remove(filepath)
-        item = Item.query.get(item_id)
-        db.session.rollback()
-        current_app.logger.error(f"Unexpected error uploading image: {str(err)}")
-        if item.seller_id != current_user.user_id:
-            raise APIError("Sorry you dont have permission to edit item you dont own", "PERMISSION_DENIED",
-                           HTTPStatus.FORBIDDEN.value)
-        elif not item:
-            raise APIError("Item not found", "ITEM_NOT_FOUND", HTTPStatus.NOT_FOUND.value)
-        else:
-            raise APIError(
-                message="Image upload failed",
-                code="UPLOAD_FAILED",
-                status_code=HTTPStatus.INTERNAL_SERVER_ERROR.value
-            )
+        if filepath:
+            try:
+                os.remove(filepath)
+            except OSError as cleanup_err:
+                current_app.logger.error(f"Failed to delete image file '{filepath}': {cleanup_err}")
+        return {"error": "Failed to save image due to a database error"}, 500
+
+    except Exception as e:
+        current_app.logger.error(f"Unexpected error uploading image for item {item_id}: {e}")
+        if filepath:
+            try:
+                os.remove(filepath)
+            except OSError as cleanup_err:
+                current_app.logger.error(f"Failed to delete image file '{filepath}': {cleanup_err}")
+        return {"error": "Image upload failed due to an internal error"}, 500
 
 
 @images_crud_bp.route('/images/<int:image_id>', methods=['DELETE'])
