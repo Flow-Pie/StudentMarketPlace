@@ -31,7 +31,7 @@ class ItemService:
         return Item.query.all()
 
     @staticmethod
-    def get_item_by_id(self, item_id):
+    def get_item_by_id(item_id):
         return Item.query.get_or_404(item_id)
 
     @staticmethod
