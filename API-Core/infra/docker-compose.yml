@@ -1,1 +1,15 @@
- # Docker services: Flask + DB
+services:
+  Backend:
+    ###--UNCOMMENT THE FOLLOWING CODE IF YOU WANT TO BUILD THE IMAGE LOCALLY--###
+    #    build:
+    #      context: ../..  # Points to StudentMarketPlace/
+    #      dockerfile: Dockerfile
+    #    command: gunicorn --bind 0.0.0.0:5000 API-Core.run:app
+    #    volumes:
+    #      - ../../API-Core:/app/API-Core  # Mount entire API-Core directory
+    image: ${DOCKER_IMAGE}
+    ports:
+      - "5000:5000"
+    environment:
+      - DATABASE_URL=${NEON_POSTGRES_URL}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
