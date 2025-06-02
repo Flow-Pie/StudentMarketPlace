@@ -8,7 +8,8 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: "${{ github.repository_owner }}/api-core"
+  #  IMAGE_NAME: "${{ github.repository_owner }}/api-core"
+  IMAGE_NAME: ${{ github.repository_owner | toLowerCase() }}/api-core
   DOCKERFILE_PATH: API-Core/Dockerfile
   CONTEXT: API-Core
 
