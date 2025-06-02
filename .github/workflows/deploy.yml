@@ -8,9 +8,9 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}/api-core
-  DOCKERFILE_PATH: Dockerfile
-  CONTEXT: API-Core  # Build context
+  IMAGE_NAME: "${{ github.repository_owner }}/api-core"
+  DOCKERFILE_PATH: API-Core/Dockerfile
+  CONTEXT: API-Core
 
 jobs:
   build-and-deploy:
@@ -25,11 +25,12 @@ jobs:
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
-          registry: ghcr.io
+          registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push Docker image
+        id: build-push
         uses: docker/build-push-action@v5
         with:
           context: ${{ env.CONTEXT }}
@@ -44,7 +45,7 @@ jobs:
         with:
           app-name: ${{ secrets.AZURE_WEBAPP_NAME }}
           publish-profile: ${{ secrets.AZURE_PUBLISH_PROFILE }}
-          images: '${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}'
+          images: '${{ steps.build-push.outputs.digest }}'
 
       - name: Configure environment variables
         uses: azure/appservice-settings@v1
@@ -66,6 +67,11 @@ jobs:
               {
                 "name": "PYTHONPATH",
                 "value": "/home/site/wwwroot",
+                "slotSetting": false
+              },
+              {
+                "name": "WEBSITES_PORT",
+                "value": "5000",
                 "slotSetting": false
               }
             ]
