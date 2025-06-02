@@ -74,7 +74,7 @@ def configure_app(app, config=None):
 
     # Database configuration
     app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv(
-        'MYSQL_URL',
+        'NEON_POSTGRES_URL',
         os.getenv('SQLITE_URL', 'sqlite:///default.db')
     )
 
