@@ -1,11 +1,13 @@
 # Routes related to items
-from flask import jsonify, Blueprint
+from flask import jsonify
+from flask_smorest import Blueprint
 from flask_jwt_extended import current_user
 from ..decorators.auth import jwt_required, admin_required
 
-items_bp = Blueprint('items', __name__)
+items_bp = Blueprint('testing routes', __name__)
 
-#protected
+
+# protected
 @items_bp.route('/me', methods=['GET'])
 @jwt_required
 def protected_items():

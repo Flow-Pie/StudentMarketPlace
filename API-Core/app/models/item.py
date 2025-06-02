@@ -1,14 +1,15 @@
+import enum
 from datetime import datetime, UTC
 from enum import Enum
 from ..extensions import db
 
 
-class ItemCategory(Enum):
-    ELECTRONICS = 1
-    BOOKS = 2
-    CLOTHING = 3
-    ETC = 4
-
+class ItemCategory(str, Enum):
+    ELECTRONICS = "ELECTRONICS"
+    BOOKS = "BOOKS"
+    CLOTHING = "CLOTHING"
+    FURNITURE = "FURNITURE"
+    OTHER = "OTHER"
 
 class ItemCondition(str, Enum):
     NEW = "New"
@@ -16,6 +17,16 @@ class ItemCondition(str, Enum):
     GOOD = "Good"
     FAIR = "Fair"
     POOR = "Poor"
+
+
+class SortByEnum(enum.Enum):
+    PRICE = "price"
+    CREATED_AT = "created_at"
+
+
+class SortOrderEnum(enum.Enum):
+    ASC = "asc"
+    DESC = "desc"
 
 
 class ItemStatus(str, Enum):
@@ -40,4 +51,15 @@ class Item(db.Model):
 
     seller = db.relationship('User', back_populates='items')
 
-
+    def to_dict(self):
+        return {
+            "item_id": self.item_id,
+            "title": self.title,
+            "description": self.description,
+            "price": float(self.price),
+            "category": self.category.name if self.category else None,
+            "condition": self.condition.value if self.condition else None,
+            "status": self.status.value,
+            "school": self.seller.institution.value if self.seller and self.seller.institution else None,
+            "created_at": self.created_at.isoformat() if self.created_at else None
+        }
