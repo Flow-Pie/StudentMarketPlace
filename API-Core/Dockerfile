@@ -12,7 +12,7 @@ RUN apt-get update \
        libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Upgrade pip for faster wheel installs
+# Upgrade pip
 RUN pip install --no-cache-dir --upgrade pip
 
 # Create and set work directory
