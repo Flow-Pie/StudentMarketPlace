@@ -52,11 +52,22 @@ jobs:
           publish-profile: ${{ secrets.AZURE_PUBLISH_PROFILE }}
           images: ${{ steps.build-push.outputs.digest }}
 
+      - name: Log in to Azure (for app service settings)
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+        # AZURE_CREDENTIALS should be a JSON string for a Service Principal:
+        # {
+        #   "clientId":   "<GUID>",
+        #   "clientSecret": "<SECRET>",
+        #   "subscriptionId": "<GUID>",
+        #   "tenantId": "<GUID>"
+        # }
+
       - name: Configure environment variables
         uses: azure/appservice-settings@v1
         with:
           app-name: ${{ secrets.AZURE_WEBAPP_NAME }}
-          publish-profile: ${{ secrets.AZURE_PUBLISH_PROFILE }}
           app-settings-json: |
             [
               {
