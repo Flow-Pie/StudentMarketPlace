@@ -8,8 +8,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  #  IMAGE_NAME: "${{ github.repository_owner }}/api-core"
-  IMAGE_NAME: ${{ github.repository_owner | toLowerCase() }}/StudentMarketPlace
+  IMAGE_NAME: ${{ github.repository_owner }}/studentmarketplace
   DOCKERFILE_PATH: API-Core/Dockerfile
   CONTEXT: API-Core
 
@@ -20,6 +19,7 @@ permissions:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -50,7 +50,7 @@ jobs:
         with:
           app-name: ${{ secrets.AZURE_WEBAPP_NAME }}
           publish-profile: ${{ secrets.AZURE_PUBLISH_PROFILE }}
-          images: '${{ steps.build-push.outputs.digest }}'
+          images: ${{ steps.build-push.outputs.digest }}
 
       - name: Configure environment variables
         uses: azure/appservice-settings@v1
