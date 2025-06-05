@@ -20,7 +20,7 @@ from ...extensions import db
 from ...models.user import TokenBlockList, User, UserInstitution
 from ...models.user import AccountStatus
 from ...schemas.auth import LoginSchema, RegistrationSchema, LoginResponseSchema, UserResponseSchema, TokenSchema, \
-    MessageSchema
+    MessageSchema,ForgotPasswordRequestSchema,ResetPasswordRequestSchema,ResetPasswordResponseSchema
 from ...services.auth import AuthService
 from flask_limiter import Limiter
 
