@@ -10,6 +10,9 @@ from .config import Config
 from .errors import APIError, configure_logging, register_error_handlers, ValidationError
 from .extensions import db, api
 from .models.user import TokenBlockList
+from .middleware.security import SecurityMiddleware
+from .middleware.caching import cache_manager
+from .middleware.monitoring import monitoring_bp
 
 # Configure logging before app creation
 logging.basicConfig(level=logging.INFO)
@@ -52,11 +55,17 @@ def create_app(config=None):
     # Initialize extensions
     initialize_extensions(app)
 
+    # Initialize middleware
+    initialize_middleware(app)
+
     # Register error handlers (before blueprints)
     register_error_handlers(app)
 
     # Register blueprints
     register_blueprints(app)
+
+    # Register monitoring blueprint
+    app.register_blueprint(monitoring_bp)
 
     # Configure teardown context
     @app.teardown_appcontext
@@ -66,6 +75,19 @@ def create_app(config=None):
     logger.info("Application initialized successfully")
     return app
 
+def initialize_middleware(app):
+    """Initialize application middleware."""
+    # Security middleware
+    security = SecurityMiddleware(app)
+    
+    # Cache manager
+    cache_manager.init_app(app)
+    
+    # Set application start time for metrics
+    import time
+    app.start_time = time.time()
+    
+    logger.info("Middleware initialized successfully")
 
 def configure_app(app, config=None):
     """Centralized configuration management"""

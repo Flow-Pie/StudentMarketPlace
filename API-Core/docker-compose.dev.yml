@@ -1,0 +1,66 @@
+version: '3.8'
+
+services:
+  web:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    command: flask run --host=0.0.0.0 --port=5000 --debug
+    volumes:
+      - .:/app
+      - /app/__pycache__
+    ports:
+      - "5000:5000"
+    environment:
+      - FLASK_ENV=development
+      - FLASK_DEBUG=1
+      - DATABASE_URL=postgresql://marketplace_user:marketplace_pass@db:5432/marketplace_dev
+      - REDIS_URL=redis://redis:6379/0
+      - JWT_SECRET_KEY=dev-secret-key-change-in-production
+    depends_on:
+      - db
+      - redis
+    networks:
+      - marketplace-network
+
+  db:
+    image: postgres:14-alpine
+    environment:
+      POSTGRES_DB: marketplace_dev
+      POSTGRES_USER: marketplace_user
+      POSTGRES_PASSWORD: marketplace_pass
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+    ports:
+      - "5432:5432"
+    networks:
+      - marketplace-network
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - marketplace-network
+
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+    volumes:
+      - ./infra/nginx.dev.conf:/etc/nginx/nginx.conf
+    depends_on:
+      - web
+    networks:
+      - marketplace-network
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  marketplace-network:
+    driver: bridge

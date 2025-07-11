@@ -11,6 +11,8 @@ from ...schemas.item import ItemCreateSchema, ItemSchema, ItemFilterSchema, Pagi
 from ...models import Item
 from ...schemas.item import ItemCreateSchema, ItemSchema, ItemUpdateSchema
 from ...services.item import ItemService
+from ...services.enhanced_item import EnhancedItemService
+from ...middleware.caching import cached
 import logging
 
 logger = logging.getLogger(__name__)
@@ -196,6 +198,10 @@ def get_filtered_items(args):
             'page': result.page,
             'per_page': result.per_page
         })
+        
+        # Use enhanced service for better performance
+        result = EnhancedItemService.get_optimized_filtered_items(filters)
+        return PaginatedItemSchema().dump(result)
 
     except ValidationError as ve:
         return jsonify({
@@ -306,6 +312,9 @@ def delete_item(item_id):
             code="SERVER_ERROR",
             status_code=HTTPStatus.INTERNAL_SERVER_ERROR.value
         )
+        
+        # Invalidate caches after item deletion
+        EnhancedItemService.invalidate_item_caches(item_id)
 
 @items_crud_bp.route('/<int:item_id>', methods=['PUT'])
 @items_crud_bp.doc(
@@ -373,5 +382,67 @@ def update_item(data, item_id):
         raise APIError(
             message="Database operation failed",
             code="DATABASE_ERROR",
+            status_code=HTTPStatus.INTERNAL_SERVER_ERROR.value
+        )
+        
+        # Invalidate caches after item update
+        EnhancedItemService.invalidate_item_caches(item_id)
+
+
+@items_crud_bp.route('/popular', methods=['GET'])
+@items_crud_bp.doc(
+    description="Get popular items (cached for performance).",
+    tags=["Items"]
+)
+@items_crud_bp.response(200, ItemSchema(many=True))
+def get_popular_items():
+    """
+    Get popular items with caching.
+    
+    Returns:
+    - List of popular item objects (cached for 5 minutes).
+    """
+    try:
+        limit = request.args.get('limit', 10, type=int)
+        limit = min(limit, 50)  # Cap at 50 items
+        
+        items = EnhancedItemService.get_popular_items(limit=limit)
+        return items, HTTPStatus.OK.value
+        
+    except Exception as e:
+        logger.error(f"Error fetching popular items: {e}")
+        raise APIError(
+            message="Failed to retrieve popular items",
+            code="POPULAR_ITEMS_ERROR",
+            status_code=HTTPStatus.INTERNAL_SERVER_ERROR.value
+        )
+
+
+@items_crud_bp.route('/stats/categories', methods=['GET'])
+@items_crud_bp.doc(
+    description="Get item statistics by category (cached).",
+    tags=["Items"]
+)
+@items_crud_bp.response(200, None)
+def get_category_stats():
+    """
+    Get item count by category.
+    
+    Returns:
+    - Dictionary with category names and item counts.
+    """
+    try:
+        stats = EnhancedItemService.get_category_statistics()
+        return {
+            'categories': stats,
+            'total_categories': len(stats),
+            'cached': True
+        }, HTTPStatus.OK.value
+        
+    except Exception as e:
+        logger.error(f"Error fetching category stats: {e}")
+        raise APIError(
+            message="Failed to retrieve category statistics",
+            code="CATEGORY_STATS_ERROR",
             status_code=HTTPStatus.INTERNAL_SERVER_ERROR.value
         )
