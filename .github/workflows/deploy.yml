@@ -1,8 +1,6 @@
 name: Build and Deploy to Azure
 
-on:
-  push:
-    branches: [ release ]
+on:  
   pull_request:
     branches: [ release ]
 
