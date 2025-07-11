@@ -1,182 +1,240 @@
-"""Enhanced validation utilities."""
-
+"""
+Enhanced validation utilities for security and data integrity.
+"""
 import re
-from typing import Any, Dict, List, Optional
-from marshmallow import ValidationError
 import bleach
-from urllib.parse import urlparse
+import urllib.parse
+from marshmallow import ValidationError
+import logging
 
+logger = logging.getLogger(__name__)
 
-class EnhancedValidator:
-    """Enhanced validation utilities for security and data integrity."""
+class SecurityValidator:
+    """Security-focused validation utilities."""
     
-    # Allowed HTML tags for rich text (if needed)
-    ALLOWED_TAGS = ['b', 'i', 'u', 'em', 'strong', 'p', 'br']
-    ALLOWED_ATTRIBUTES = {}
+    # Password strength requirements
+    PASSWORD_MIN_LENGTH = 8
+    PASSWORD_PATTERNS = {
+        'uppercase': r'[A-Z]',
+        'lowercase': r'[a-z]',
+        'digit': r'\d',
+        'special': r'[!@#$%^&*(),.?":{}|<>]'
+    }
     
-    # Common dangerous patterns
-    DANGEROUS_PATTERNS = [
-        r'<script[^>]*>.*?</script>',
-        r'javascript:',
-        r'vbscript:',
-        r'onload\s*=',
-        r'onerror\s*=',
-        r'onclick\s*=',
-    ]
+    # XSS prevention
+    ALLOWED_HTML_TAGS = []  # No HTML tags allowed by default
+    ALLOWED_HTML_ATTRIBUTES = {}
+    
+    # URL validation
+    ALLOWED_URL_SCHEMES = ['http', 'https']
     
     @classmethod
-    def sanitize_html(cls, value: str, allow_tags: bool = False) -> str:
-        """Sanitize HTML content."""
+    def validate_password_strength(cls, password):
+        """Validate password strength requirements."""
+        errors = []
+        
+        if len(password) < cls.PASSWORD_MIN_LENGTH:
+            errors.append(f"Password must be at least {cls.PASSWORD_MIN_LENGTH} characters long")
+        
+        for requirement, pattern in cls.PASSWORD_PATTERNS.items():
+            if not re.search(pattern, password):
+                errors.append(f"Password must contain at least one {requirement} character")
+        
+        # Check for common weak passwords
+        weak_passwords = ['password', '123456', 'qwerty', 'admin', 'letmein']
+        if password.lower() in weak_passwords:
+            errors.append("Password is too common and easily guessable")
+        
+        if errors:
+            raise ValidationError(errors)
+        
+        return password
+    
+    @classmethod
+    def sanitize_html(cls, value):
+        """Sanitize HTML content to prevent XSS attacks."""
         if not value:
             return value
         
-        if allow_tags:
-            # Allow specific tags
-            cleaned = bleach.clean(
-                value, 
-                tags=cls.ALLOWED_TAGS,
-                attributes=cls.ALLOWED_ATTRIBUTES,
-                strip=True
-            )
-        else:
-            # Strip all HTML
-            cleaned = bleach.clean(value, tags=[], attributes={}, strip=True)
+        # Clean HTML using bleach
+        cleaned = bleach.clean(
+            value,
+            tags=cls.ALLOWED_HTML_TAGS,
+            attributes=cls.ALLOWED_HTML_ATTRIBUTES,
+            strip=True
+        )
         
-        # Check for dangerous patterns
-        for pattern in cls.DANGEROUS_PATTERNS:
-            if re.search(pattern, cleaned, re.IGNORECASE):
-                raise ValidationError("Content contains potentially dangerous code")
+        # Check if content was modified (potential XSS attempt)
+        if cleaned != value:
+            logger.warning(
+                "Potential XSS attempt detected",
+                extra={'original': value, 'cleaned': cleaned}
+            )
+            raise ValidationError("HTML tags or unsafe characters detected")
         
         return cleaned
     
     @classmethod
-    def validate_email_domain(cls, email: str, allowed_domains: Optional[List[str]] = None) -> bool:
-        """Validate email domain against whitelist."""
-        if not allowed_domains:
-            return True
-        
-        domain = email.split('@')[1].lower()
-        return domain in [d.lower() for d in allowed_domains]
-    
-    @classmethod
-    def validate_password_strength(cls, password: str) -> Dict[str, Any]:
-        """Comprehensive password strength validation."""
-        issues = []
-        score = 0
-        
-        # Length check
-        if len(password) < 8:
-            issues.append("Password must be at least 8 characters long")
-        elif len(password) >= 12:
-            score += 2
-        else:
-            score += 1
-        
-        # Character variety checks
-        if not re.search(r'[a-z]', password):
-            issues.append("Password must contain lowercase letters")
-        else:
-            score += 1
-        
-        if not re.search(r'[A-Z]', password):
-            issues.append("Password must contain uppercase letters")
-        else:
-            score += 1
-        
-        if not re.search(r'\d', password):
-            issues.append("Password must contain numbers")
-        else:
-            score += 1
-        
-        if not re.search(r'[!@#$%^&*(),.?":{}|<>]', password):
-            issues.append("Password must contain special characters")
-        else:
-            score += 1
-        
-        # Common password patterns
-        common_patterns = [
-            r'123456',
-            r'password',
-            r'qwerty',
-            r'abc123'
-        ]
-        
-        for pattern in common_patterns:
-            if re.search(pattern, password.lower()):
-                issues.append("Password contains common patterns")
-                score -= 1
-                break
-        
-        # Determine strength
-        if score >= 6:
-            strength = "strong"
-        elif score >= 4:
-            strength = "medium"
-        else:
-            strength = "weak"
-        
-        return {
-            'valid': len(issues) == 0,
-            'issues': issues,
-            'strength': strength,
-            'score': max(0, score)
-        }
-    
-    @classmethod
-    def validate_url(cls, url: str, allowed_schemes: List[str] = None) -> bool:
-        """Validate URL format and scheme."""
-        if not allowed_schemes:
-            allowed_schemes = ['http', 'https']
+    def validate_url(cls, url):
+        """Validate URL for security."""
+        if not url:
+            return url
         
         try:
-            parsed = urlparse(url)
-            return (
-                parsed.scheme in allowed_schemes and
-                parsed.netloc and
-                not any(dangerous in url.lower() for dangerous in ['javascript:', 'data:', 'vbscript:'])
-            )
-        except Exception:
-            return False
+            parsed = urllib.parse.urlparse(url)
+            
+            # Check scheme
+            if parsed.scheme not in cls.ALLOWED_URL_SCHEMES:
+                raise ValidationError(f"URL scheme must be one of: {', '.join(cls.ALLOWED_URL_SCHEMES)}")
+            
+            # Check for suspicious patterns
+            suspicious_patterns = [
+                'javascript:',
+                'data:',
+                'vbscript:',
+                'file:',
+                'ftp:'
+            ]
+            
+            url_lower = url.lower()
+            for pattern in suspicious_patterns:
+                if pattern in url_lower:
+                    raise ValidationError("URL contains suspicious content")
+            
+            return url
+            
+        except Exception as e:
+            if isinstance(e, ValidationError):
+                raise
+            raise ValidationError("Invalid URL format")
     
     @classmethod
-    def validate_file_upload(cls, filename: str, content_type: str, 
-                           allowed_extensions: List[str], 
-                           allowed_mime_types: List[str]) -> Dict[str, Any]:
-        """Comprehensive file upload validation."""
-        issues = []
+    def validate_file_upload(cls, filename, allowed_extensions=None, max_size=None):
+        """Validate file upload for security."""
+        if not filename:
+            raise ValidationError("Filename is required")
         
-        # Extension check
-        if '.' not in filename:
-            issues.append("File must have an extension")
-        else:
-            ext = filename.rsplit('.', 1)[1].lower()
-            if ext not in allowed_extensions:
-                issues.append(f"File extension '{ext}' not allowed")
+        # Check file extension
+        if allowed_extensions:
+            file_ext = filename.rsplit('.', 1)[-1].lower() if '.' in filename else ''
+            if file_ext not in [ext.lower() for ext in allowed_extensions]:
+                raise ValidationError(f"File type not allowed. Allowed types: {', '.join(allowed_extensions)}")
         
-        # MIME type check
-        if content_type not in allowed_mime_types:
-            issues.append(f"File type '{content_type}' not allowed")
+        # Check for suspicious filenames
+        suspicious_patterns = [
+            '../',
+            '..\\',
+            '/etc/',
+            '/var/',
+            '/usr/',
+            'web.config',
+            '.htaccess',
+            '.php',
+            '.jsp',
+            '.asp'
+        ]
         
-        # Filename security check
-        dangerous_chars = ['..', '/', '\\', '<', '>', ':', '"', '|', '?', '*']
-        if any(char in filename for char in dangerous_chars):
-            issues.append("Filename contains dangerous characters")
+        filename_lower = filename.lower()
+        for pattern in suspicious_patterns:
+            if pattern in filename_lower:
+                raise ValidationError("Filename contains suspicious content")
         
-        return {
-            'valid': len(issues) == 0,
-            'issues': issues
-        }
+        return filename
+    
+    @classmethod
+    def validate_email_format(cls, email):
+        """Enhanced email validation."""
+        if not email:
+            raise ValidationError("Email is required")
+        
+        # Basic email regex
+        email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+        
+        if not re.match(email_pattern, email):
+            raise ValidationError("Invalid email format")
+        
+        # Check for suspicious patterns
+        suspicious_patterns = [
+            'javascript:',
+            '<script',
+            'onclick=',
+            'onerror='
+        ]
+        
+        email_lower = email.lower()
+        for pattern in suspicious_patterns:
+            if pattern in email_lower:
+                raise ValidationError("Email contains suspicious content")
+        
+        return email.lower()
+    
+    @classmethod
+    def validate_phone_number(cls, phone):
+        """Validate phone number format."""
+        if not phone:
+            return phone
+        
+        # Remove common formatting characters
+        cleaned_phone = re.sub(r'[^\d+]', '', phone)
+        
+        # Basic phone number validation (international format)
+        phone_pattern = r'^\+?[1-9]\d{1,14}$'
+        
+        if not re.match(phone_pattern, cleaned_phone):
+            raise ValidationError("Invalid phone number format")
+        
+        return cleaned_phone
+    
+    @classmethod
+    def validate_numeric_range(cls, value, min_val=None, max_val=None):
+        """Validate numeric value within range."""
+        try:
+            num_value = float(value)
+        except (ValueError, TypeError):
+            raise ValidationError("Value must be a number")
+        
+        if min_val is not None and num_value < min_val:
+            raise ValidationError(f"Value must be at least {min_val}")
+        
+        if max_val is not None and num_value > max_val:
+            raise ValidationError(f"Value must be at most {max_val}")
+        
+        return num_value
+    
+    @classmethod
+    def validate_text_length(cls, text, min_length=None, max_length=None):
+        """Validate text length constraints."""
+        if not text:
+            text = ""
+        
+        text_length = len(text)
+        
+        if min_length is not None and text_length < min_length:
+            raise ValidationError(f"Text must be at least {min_length} characters long")
+        
+        if max_length is not None and text_length > max_length:
+            raise ValidationError(f"Text must be at most {max_length} characters long")
+        
+        return text
 
 
-def validate_json_schema(data: Dict[str, Any], required_fields: List[str]) -> Dict[str, Any]:
-    """Validate JSON data against required fields."""
-    missing_fields = []
-    
-    for field in required_fields:
-        if field not in data or data[field] is None:
-            missing_fields.append(field)
-    
-    return {
-        'valid': len(missing_fields) == 0,
-        'missing_fields': missing_fields
-    }
+# Convenience functions for common validations
+def validate_password(password):
+    """Validate password strength."""
+    return SecurityValidator.validate_password_strength(password)
+
+def sanitize_input(value):
+    """Sanitize user input."""
+    return SecurityValidator.sanitize_html(value)
+
+def validate_url(url):
+    """Validate URL."""
+    return SecurityValidator.validate_url(url)
+
+def validate_email(email):
+    """Validate email."""
+    return SecurityValidator.validate_email_format(email)
+
+def validate_file(filename, allowed_extensions=None):
+    """Validate file upload."""
+    return SecurityValidator.validate_file_upload(filename, allowed_extensions)

@@ -1,132 +1,240 @@
-"""Monitoring and health check middleware."""
-
-from flask import Blueprint, jsonify, current_app
-from datetime import datetime, timezone
-import psutil
+"""
+Monitoring and health check middleware.
+"""
+import logging
 import time
-from ..extensions import db
-from ..models import User, Item
+import psutil
+import os
+from flask import jsonify, current_app, g
+from sqlalchemy import text
+from app.extensions import db
 
+logger = logging.getLogger(__name__)
 
-monitoring_bp = Blueprint('monitoring', __name__)
-
-
-@monitoring_bp.route('/health', methods=['GET'])
-def health_check():
-    """Comprehensive health check endpoint."""
-    health_status = {
-        'status': 'healthy',
-        'timestamp': datetime.now(timezone.utc).isoformat(),
-        'version': '1.0.0',
-        'checks': {}
-    }
+class HealthChecker:
+    """Health check utilities for monitoring."""
     
-    overall_healthy = True
+    @staticmethod
+    def check_database():
+        """Check database connectivity."""
+        try:
+            # Simple query to test database connection
+            db.session.execute(text('SELECT 1'))
+            db.session.commit()
+            return {'status': 'healthy', 'response_time': 0}
+        except Exception as e:
+            logger.error(f"Database health check failed: {str(e)}")
+            return {'status': 'unhealthy', 'error': str(e)}
     
-    # Database connectivity check
-    try:
-        db.session.execute('SELECT 1')
-        health_status['checks']['database'] = {
-            'status': 'healthy',
-            'response_time_ms': 0  # Could measure actual response time
-        }
-    except Exception as e:
-        health_status['checks']['database'] = {
-            'status': 'unhealthy',
-            'error': str(e)
-        }
-        overall_healthy = False
-    
-    # Redis cache check
-    try:
-        from .caching import cache_manager
-        if cache_manager.redis_client:
-            cache_manager.redis_client.ping()
-            health_status['checks']['cache'] = {'status': 'healthy'}
-        else:
-            health_status['checks']['cache'] = {'status': 'unavailable'}
-    except Exception as e:
-        health_status['checks']['cache'] = {
-            'status': 'unhealthy',
-            'error': str(e)
-        }
-    
-    # System resources check
-    try:
-        cpu_percent = psutil.cpu_percent(interval=1)
-        memory = psutil.virtual_memory()
-        disk = psutil.disk_usage('/')
-        
-        health_status['checks']['system'] = {
-            'status': 'healthy',
-            'cpu_percent': cpu_percent,
-            'memory_percent': memory.percent,
-            'disk_percent': disk.percent
-        }
-        
-        # Alert if resources are high
-        if cpu_percent > 80 or memory.percent > 80 or disk.percent > 80:
-            health_status['checks']['system']['status'] = 'warning'
+    @staticmethod
+    def check_system_resources():
+        """Check system resource usage."""
+        try:
+            cpu_percent = psutil.cpu_percent(interval=1)
+            memory = psutil.virtual_memory()
+            disk = psutil.disk_usage('/')
             
-    except Exception as e:
-        health_status['checks']['system'] = {
-            'status': 'error',
-            'error': str(e)
-        }
-    
-    # Set overall status
-    if not overall_healthy:
-        health_status['status'] = 'unhealthy'
-        return jsonify(health_status), 503
-    
-    return jsonify(health_status), 200
-
-
-@monitoring_bp.route('/metrics', methods=['GET'])
-def metrics():
-    """Basic application metrics."""
-    try:
-        # Database metrics
-        total_users = User.query.count()
-        active_users = User.query.filter_by(account_status='Active').count()
-        total_items = Item.query.count()
-        available_items = Item.query.filter_by(status='Available').count()
-        
-        metrics_data = {
-            'timestamp': datetime.now(timezone.utc).isoformat(),
-            'database': {
-                'total_users': total_users,
-                'active_users': active_users,
-                'total_items': total_items,
-                'available_items': available_items
-            },
-            'system': {
-                'uptime_seconds': time.time() - current_app.start_time if hasattr(current_app, 'start_time') else 0
+            return {
+                'status': 'healthy',
+                'cpu_percent': cpu_percent,
+                'memory_percent': memory.percent,
+                'memory_available_mb': memory.available // (1024 * 1024),
+                'disk_percent': disk.percent,
+                'disk_free_gb': disk.free // (1024 * 1024 * 1024)
             }
-        }
-        
-        return jsonify(metrics_data), 200
-        
-    except Exception as e:
+        except Exception as e:
+            logger.error(f"System resource check failed: {str(e)}")
+            return {'status': 'unhealthy', 'error': str(e)}
+    
+    @staticmethod
+    def get_application_metrics():
+        """Get application-specific metrics."""
+        try:
+            from app.middleware.caching import cache_manager
+            
+            # Get cache statistics
+            cache_stats = cache_manager.get_stats()
+            
+            # Get basic app info
+            metrics = {
+                'app_name': current_app.config.get('APP_NAME', 'StudentMarketplace'),
+                'version': current_app.config.get('VERSION', '1.0.0'),
+                'environment': current_app.config.get('FLASK_ENV', 'production'),
+                'uptime_seconds': time.time() - current_app.config.get('START_TIME', time.time()),
+                'cache_stats': cache_stats
+            }
+            
+            return metrics
+        except Exception as e:
+            logger.error(f"Application metrics check failed: {str(e)}")
+            return {'error': str(e)}
+
+
+def create_health_endpoints(app):
+    """Create health check endpoints."""
+    
+    @app.route('/health')
+    def health_check():
+        """Basic health check endpoint."""
+        try:
+            # Check database
+            db_health = HealthChecker.check_database()
+            
+            # Check system resources
+            system_health = HealthChecker.check_system_resources()
+            
+            # Determine overall health
+            overall_status = 'healthy'
+            if db_health['status'] != 'healthy' or system_health['status'] != 'healthy':
+                overall_status = 'unhealthy'
+            
+            response = {
+                'status': overall_status,
+                'timestamp': time.time(),
+                'checks': {
+                    'database': db_health,
+                    'system': system_health
+                }
+            }
+            
+            status_code = 200 if overall_status == 'healthy' else 503
+            return jsonify(response), status_code
+            
+        except Exception as e:
+            logger.error(f"Health check failed: {str(e)}")
+            return jsonify({
+                'status': 'unhealthy',
+                'error': str(e),
+                'timestamp': time.time()
+            }), 503
+    
+    @app.route('/ready')
+    def readiness_check():
+        """Readiness check for Kubernetes."""
+        try:
+            # Check if app is ready to serve requests
+            db_health = HealthChecker.check_database()
+            
+            if db_health['status'] == 'healthy':
+                return jsonify({
+                    'status': 'ready',
+                    'timestamp': time.time()
+                }), 200
+            else:
+                return jsonify({
+                    'status': 'not_ready',
+                    'reason': 'database_unavailable',
+                    'timestamp': time.time()
+                }), 503
+                
+        except Exception as e:
+            logger.error(f"Readiness check failed: {str(e)}")
+            return jsonify({
+                'status': 'not_ready',
+                'error': str(e),
+                'timestamp': time.time()
+            }), 503
+    
+    @app.route('/live')
+    def liveness_check():
+        """Liveness check for Kubernetes."""
+        # Simple liveness check - if we can respond, we're alive
         return jsonify({
-            'error': 'Failed to collect metrics',
-            'details': str(e)
-        }), 500
+            'status': 'alive',
+            'timestamp': time.time()
+        }), 200
+    
+    @app.route('/metrics')
+    def metrics_endpoint():
+        """Application metrics endpoint."""
+        try:
+            metrics = HealthChecker.get_application_metrics()
+            system_health = HealthChecker.check_system_resources()
+            
+            response = {
+                'application': metrics,
+                'system': system_health,
+                'timestamp': time.time()
+            }
+            
+            return jsonify(response), 200
+            
+        except Exception as e:
+            logger.error(f"Metrics endpoint failed: {str(e)}")
+            return jsonify({
+                'error': str(e),
+                'timestamp': time.time()
+            }), 500
 
 
-@monitoring_bp.route('/ready', methods=['GET'])
-def readiness_check():
-    """Kubernetes readiness probe endpoint."""
-    try:
-        # Check if application is ready to serve traffic
-        db.session.execute('SELECT 1')
-        return jsonify({'status': 'ready'}), 200
-    except Exception:
-        return jsonify({'status': 'not ready'}), 503
+class RequestMetrics:
+    """Track request metrics."""
+    
+    def __init__(self):
+        self.request_count = 0
+        self.response_times = []
+        self.error_count = 0
+    
+    def record_request(self, response_time, status_code):
+        """Record request metrics."""
+        self.request_count += 1
+        self.response_times.append(response_time)
+        
+        if status_code >= 400:
+            self.error_count += 1
+        
+        # Keep only last 1000 response times
+        if len(self.response_times) > 1000:
+            self.response_times = self.response_times[-1000:]
+    
+    def get_stats(self):
+        """Get request statistics."""
+        if not self.response_times:
+            return {
+                'request_count': self.request_count,
+                'error_count': self.error_count,
+                'error_rate': 0,
+                'avg_response_time': 0,
+                'min_response_time': 0,
+                'max_response_time': 0
+            }
+        
+        avg_response_time = sum(self.response_times) / len(self.response_times)
+        error_rate = (self.error_count / self.request_count * 100) if self.request_count > 0 else 0
+        
+        return {
+            'request_count': self.request_count,
+            'error_count': self.error_count,
+            'error_rate': round(error_rate, 2),
+            'avg_response_time': round(avg_response_time, 3),
+            'min_response_time': round(min(self.response_times), 3),
+            'max_response_time': round(max(self.response_times), 3)
+        }
 
 
-@monitoring_bp.route('/live', methods=['GET'])
-def liveness_check():
-    """Kubernetes liveness probe endpoint."""
-    # Simple liveness check - if we can respond, we're alive
-    return jsonify({'status': 'alive'}), 200
+# Global metrics instance
+request_metrics = RequestMetrics()
+
+
+def init_monitoring(app):
+    """Initialize monitoring middleware."""
+    
+    # Record start time
+    app.config['START_TIME'] = time.time()
+    
+    # Create health endpoints
+    create_health_endpoints(app)
+    
+    @app.before_request
+    def before_request():
+        """Record request start time."""
+        g.start_time = time.time()
+    
+    @app.after_request
+    def after_request(response):
+        """Record request metrics."""
+        if hasattr(g, 'start_time'):
+            response_time = time.time() - g.start_time
+            request_metrics.record_request(response_time, response.status_code)
+        
+        return response
