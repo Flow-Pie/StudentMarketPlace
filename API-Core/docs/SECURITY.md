@@ -245,7 +245,7 @@ grep "failed login" logs/app.log | grep "$(date +%Y-%m-%d)"
 If you discover a security vulnerability, please:
 
 1. **Do not** open a public GitHub issue
-2. Email security concerns to: security@studentmarketplace.com
+2. Email security concerns to: startabase@gmail.com
 3. Include detailed information about the vulnerability
 4. Allow time for the team to respond and fix the issue
 
