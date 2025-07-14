@@ -10,12 +10,21 @@ import time
 
 logger = logging.getLogger(__name__)
 
+
 class CacheManager:
-    """Simple in-memory cache manager."""
-    
+    """Enhanced in-memory cache manager with app initialization support."""
+
     def __init__(self):
         self.cache = {}
         self.cache_stats = {'hits': 0, 'misses': 0}
+        self.default_timeout = 300  # Default timeout in seconds
+        self.enabled = True
+
+    def init_app(self, app):
+        """Initialize with Flask app configuration."""
+        self.default_timeout = app.config.get('CACHE_DEFAULT_TIMEOUT', 300)
+        self.enabled = app.config.get('CACHE_ENABLED', True)
+        logger.info(f"Cache initialized with timeout: {self.default_timeout}s")
     
     def get(self, key):
         """Get value from cache."""
