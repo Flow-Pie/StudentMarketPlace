@@ -60,7 +60,7 @@ def create_app(config=None):
     initialize_extensions(app)
 
     # Initialize monitoring
-    # init_monitoring(app)
+    init_monitoring(app)
 
     # Register error handlers
     register_error_handlers(app)
